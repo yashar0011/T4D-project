@@ -1,0 +1,115 @@
+#  amts_pipeline – v3.4  (FULL LENGTH, slice‑aware, diff‑watcher)
+# -------------------------------------------------------------
+#  MODULES          WHAT THEY DO
+#  ------------------------------------------------------------
+#  __init__.py      → makes the package runnable (python -m amts_pipeline)
+#  main.py          → CLI, finds Settings.xlsx, starts watchdog.
+#  watcher.py       → monitors file saves, diff‑hashes Settings rows,
+#                     queues only changed/added slices, supports --full.
+#  cache_utils.py   → stores row hashes + latest processed epoch per slice
+#                     in .amts_cache.json next to Settings.xlsx.
+#  settings.py      → loads the spreadsheet, validates, expands blanks,
+#                     returns tidy DataFrame of active rules.
+#  mad_utils.py     → robust statistics: z‑scores, vectorised MAD filter.
+#  io_utils.py      → raw CSV loader, Excel writer, Data‑Logger CSV export.
+#  plotting.py      → comparison PDF bundle (Matplotlib, no seaborn).
+#  log_utils.py     → per‑site rotating logs (one file per UTC day).
+#  cleaner.py       → executes one slice: loads raw, MAD‑filters, computes
+#                     ΔN/ΔE/ΔH, appends to immutable slice CSV, updates
+#                     Excel summary + Data‑Logger feed, saves plots.
+# -------------------------------------------------------------
+#  DEPENDENCIES
+#      pip install pandas numpy watchdog openpyxl xlsxwriter matplotlib
+# -------------------------------------------------------------
+#  USAGE EXAMPLES
+#      python -m amts_pipeline              # incremental (diff‑only)
+#      python -m amts_pipeline --full       # wipe cache & rebuild all
+# =============================================================
+########################################################################
+########################################################################
+########################################################################
+===============================================================
+instructions = """
+RUNNING  amts_pipeline  (v3.4)
+================================
+
+Prerequisites
+-------------
+1. Python 3.9+ installed (https://python.org)
+2. Git clone or unzip the project so you have:
+
+   T4D-project/
+   ├─ amts_pipeline/      # the code
+   ├─ Settings.xlsx       # your configuration sheet
+   └─ (optional) raw_data/
+
+One‑time setup
+--------------
+> Open a terminal (PowerShell, CMD, or VS Code terminal) inside the project
+> root — the folder that contains amts_pipeline/.
+
+1)  Create a virtual environment
+    ----------------------------------------------------
+    python -m venv venv
+
+2)  Activate it
+    ----------------------------------------------------
+    # Windows PowerShell
+    .\\venv\\Scripts\\Activate
+
+    # macOS / Linux bash
+    source venv/bin/activate
+
+    You should now see (venv) in the prompt.
+
+3)  Install project dependencies
+    ----------------------------------------------------
+    pip install pandas numpy watchdog openpyxl matplotlib xlsxwriter
+
+4)  OPTIONAL – verify dependencies are frozen for repeatability
+    ----------------------------------------------------
+    pip freeze > requirements.txt
+
+Running the pipeline
+--------------------
+Incremental watcher (default)
+    python -m amts_pipeline
+
+    • Reads Settings.xlsx
+    • Creates outputs/<Site>/... CSVs & logs
+    • Watches the settings file; saving it
+      re‑processes only changed slices.
+
+Force full rebuild (ignore cache)
+    python -m amts_pipeline --full
+
+Run once then exit  (good for Task Scheduler)
+    python -m amts_pipeline --run-once
+    python -m amts_pipeline --run-once --full  # full rebuild
+
+Stopping the watcher
+--------------------
+Press Ctrl + C in the same terminal window.
+
+Cleaning up
+-----------
+Delete these to start 100 % fresh:
+    outputs/             # generated CSVs & logs
+    .amts_cache.json     # slice hash/timestamp cache
+
+Deactivate venv when finished
+    deactivate
+
+Common issues
+-------------
+•  'ModuleNotFoundError: watchdog'  →  forgot the pip install step.
+•  'Activate.ps1 cannot be loaded'  →  run PowerShell as admin once:
+     Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+•  No output files  →  check ImportFolder paths and timestamp range
+   against StartUTC in Settings.xlsx.
+
+Happy monitoring!
+"""
+with open('/mnt/data/Run_Instructions.txt', 'w', encoding='utf-8') as f:
+    f.write(instructions)
+'/mnt/data/Run_Instructions.txt'

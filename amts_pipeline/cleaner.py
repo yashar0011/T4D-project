@@ -25,6 +25,8 @@ def process_slice(row: pd.Series, latest_ts):
     raw = raw[raw["TIMESTAMP"].dt.tz_convert(timezone.utc) >= start_utc]
     if latest_ts is not None:
         raw = raw[raw["TIMESTAMP"] > latest_ts]
+    primary = row["PointName"].upper()
+    raw     = raw[raw["Point Name"].str.upper().str.startswith(primary)]
     if raw.empty:
         return None
 
