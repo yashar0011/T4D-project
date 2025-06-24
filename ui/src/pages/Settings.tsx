@@ -1,9 +1,18 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  QueryClient,
+} from "@tanstack/react-query";
 import { api } from "../api";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardContent,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2Icon as Loader2 } from "lucide-react";
 import { useState } from "react";
 
 type Row = {
@@ -19,15 +28,20 @@ type Row = {
 
 export default function Settings() {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery<Row[]>(["settings"], () =>
-    api.get("/settings").then((r) => r.data)
-  );
 
-  const [editing, setEditing] = useState<Row | null>(null);
-  const save = useMutation({
-    mutationFn: (row: Row) => api.put(`/settings/${row.id}`, row),
-    onSuccess: () => qc.invalidateQueries(["settings"]),
+  /* ---------- GET all rows ---------- */
+  const { data, isLoading } = useQuery<Row[]>({
+    queryKey: ["settings"],
+    queryFn: () => api.get("/settings").then((r) => r.data),
   });
+
+  /* ---------- PUT one row ---------- */
+  const [editing, setEditing] = useState<Row | null>(null);
+
+  const save = useMutation({
+  mutationFn: (row: Row) => api.put(`/settings/${row.id}`, row),
+  onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+});
 
   if (isLoading) return <Loader2 className="animate-spin" />;
 
@@ -36,66 +50,50 @@ export default function Settings() {
       <CardHeader className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Settings</h2>
         {editing && (
-          <Button onClick={() => save.mutate(editing)} disabled={save.isLoading}>
-            {save.isLoading ? "Saving…" : "Save"}
+          <Button
+            onClick={() => save.mutate(editing)}
+            disabled={save.isPending}     // ← was isLoading
+          >
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         )}
       </CardHeader>
 
-      <CardContent>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b">
-              {[
-                "Active",
-                "SensorID",
-                "Site",
-                "PointName",
-                "Type",
-                "BaselineH",
-                "StartUTC",
-              ].map((c) => (
-                <th key={c} className="p-2 text-left font-medium">
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data!.map((row) => (
-              <tr
-                key={row.id}
-                className="border-b hover:bg-gray-100 cursor-pointer"
-                onClick={() => setEditing(row)}
-              >
-                <td className="p-2">{row.Active ? "✔" : ""}</td>
-                <td className="p-2">{row.SensorID}</td>
-                <td className="p-2">{row.Site}</td>
-                <td className="p-2">{row.PointName}</td>
-                <td className="p-2">{row.Type}</td>
-                <td className="p-2">{row.BaselineH}</td>
-                <td className="p-2">{new Date(row.StartUTC).toISOString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {editing && (
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <Input
-              value={editing.BaselineH}
+      <CardContent className="space-y-4">
+        {data?.map((row) => (
+          <div
+            key={row.id}
+            className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-2 items-center"
+          >
+            <input
+              type="checkbox"
+              checked={row.Active}
               onChange={(e) =>
-                setEditing({ ...editing, BaselineH: +e.target.value })
+                setEditing({ ...row, Active: e.target.checked })
               }
             />
+            <span>{row.SensorID}</span>
+            <span>{row.Site}</span>
             <Input
-              value={editing.StartUTC}
+              value={row.PointName}
               onChange={(e) =>
-                setEditing({ ...editing, StartUTC: e.target.value })
+                setEditing({ ...row, PointName: e.target.value })
               }
             />
+            <span>{row.Type}</span>
+            <Input
+              type="number"
+              value={row.BaselineH}
+              onChange={(e) =>
+                setEditing({
+                  ...row,
+                  BaselineH: parseFloat(e.target.value),
+                })
+              }
+            />
+            <span>{row.StartUTC}</span>
           </div>
-        )}
+        ))}
       </CardContent>
     </Card>
   );

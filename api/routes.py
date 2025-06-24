@@ -6,7 +6,7 @@ import pandas as pd
 import io, asyncio, os
 
 from .models import DeltasResponse, SettingsRow, SettingsUpdate, CommandRequest
-from .deps import get_settings_df, load_deltas, SETTINGS_PATH
+from .deps import get_settings, load_deltas, SETTINGS_PATH
 from .watcher_runner import CMD_Q
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -24,12 +24,12 @@ async def get_deltas(point: str, hours: int = 24):
 # ───────────────────────── settings ──────────────────────────
 @router.get("/settings", response_model=list[SettingsRow])
 async def list_settings():
-    df = get_settings_df().reset_index().rename(columns={"index": "id"})
+    df = get_settings().reset_index().rename(columns={"index": "id"})
     return df.to_dict("records")
 
 @router.put("/settings/{row_id}")
 async def patch_setting(row_id: int, upd: SettingsUpdate):
-    df = get_settings_df()
+    df = get_settings()
     if row_id >= len(df):
         raise HTTPException(404, "row not found")
     df.at[row_id, upd.field] = upd.value
