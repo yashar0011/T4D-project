@@ -1,0 +1,20 @@
+# ---------------- core stack ----------------
+fastapi==0.111.0           # API framework
+uvicorn[standard]==0.30.1  # ASGI server + reload, logging, proxies
+pydantic==2.7.1            # schema / validation (matches FastAPI ≥0.110)
+
+# ---------------- data / pipeline ---------
+pandas==2.2.2              # DataFrames, Excel, CSV parsing
+numpy==1.26.4              # numerical core behind pandas
+openpyxl==3.1.2            # .xlsx read/write (pandas engine)
+XlsxWriter==3.2.0          # fast .xlsx writer (used by io_utils)
+matplotlib==3.9.0          # plotting backend for PDF export
+watchdog==4.0.1            # file-system watcher in amts_pipeline
+
+# ---------------- extra utilities ----------
+python-dateutil==2.9.0     # robust datetime parsing
+tzdata==2024.1             # IANA time-zone database (Windows)
+
+# ---------------- dev / prod convenience ---
+python-dotenv==1.0.1       # optional: load .env vars if present
+ruff==0.4.8                # (dev) lightning-fast linter / formatter
