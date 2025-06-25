@@ -1,24 +1,30 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 
 export default function NavBar() {
-  const loc = useLocation();
-  const link = (to: string, label: string) => (
-    <Link
-      to={to}
-      className={`px-4 py-2 hover:bg-gray-200 rounded-md ${
-        loc.pathname.startsWith(to) ? "bg-gray-200" : ""
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const base = "px-3 py-2 rounded-md text-sm font-medium";
+  const active = "bg-primary text-primary-foreground";
   return (
-    <header className="flex items-center gap-2 shadow p-2 bg-white">
-      <span className="font-bold mr-4">T4D Dashboard</span>
-      {link("/dashboard", "Dashboard")}
-      {link("/settings", "Settings")}
-      {link("/files", "Files")}
-      {link("/logs", "Logs")}
+    <header className="border-b border-border bg-card">
+      <div className="mx-auto max-w-6xl flex items-center justify-between px-4">
+        <Link to="/" className="text-xl font-bold py-4">
+          T4D Dashboard
+        </Link>
+
+        <nav className="space-x-1">
+          {["dashboard", "settings", "files", "logs"].map((p) => (
+            <NavLink
+              key={p}
+              to={`/${p}`}
+              className={({ isActive }) =>
+                `${base} ${isActive ? active : "hover:bg-muted"}`
+              }
+              end
+            >
+              {p[0].toUpperCase() + p.slice(1)}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
     </header>
   );
 }

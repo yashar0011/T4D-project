@@ -1,23 +1,46 @@
-"""Load & validate Settings.xlsx / CSV."""
+"""
+Load *Settings.xlsx* and return **only** the rows that are meant to be
+processed (CSVImport = TRUE).  All other logic (parsing of types, date
+columns, etc.) lives here so the rest of the pipeline can rely on a clean
+DataFrame.
+"""
 from __future__ import annotations
-import pandas as pd
+
 from pathlib import Path
-
-KEY_COLS = [
-    "Active","SensorID","Site","PointName","Type","ImportFolder","ExportFolder",
-    "BaselineN","BaselineE","BaselineH","OutlierMAD","StartUTC"
-]
+import pandas as pd
 
 
-def load_active_settings(path: Path):
-    if path.suffix.lower() == ".csv":
-        df = pd.read_csv(path)
-    else:
-        df = pd.read_excel(path)
-    df.columns = [c.strip() for c in df.columns]
-    for c in KEY_COLS:
-        if c not in df.columns:
-            df[c] = ""
-    df = df[df.Active.astype(str).str.upper() == "TRUE"].copy()
-    df.sort_values(["SensorID","PointName","StartUTC"], inplace=True)
-    return df[KEY_COLS]
+def _coerce_bool(col: pd.Series) -> pd.Series:
+    """Accept TRUE/FALSE, 1/0, 'yes'/'no', etc. – default False."""
+    return (
+        col.fillna(False)
+           .astype(str)
+           .str.strip()
+           .str.lower()
+           .isin({"true", "1", "yes"})
+    )
+
+
+def load_active_settings(path: Path | str) -> pd.DataFrame:
+    df = pd.read_excel(path)
+
+    # --- normalise new boolean flags ----------------------------------------
+    for flag in ("CSVImport", "SQLImport"):
+        if flag not in df.columns:
+            raise ValueError(f"Missing required column “{flag}” in {path}")
+        df[flag] = _coerce_bool(df[flag])
+
+    # keep ONLY points that should be processed (CSVImport = TRUE)
+    df = df[df["CSVImport"]].copy()
+
+    # make sure numeric columns have numeric dtypes
+    numeric_cols = [
+        "SQLSensorID", "BaselineN", "BaselineE", "BaselineH", "OutlierMAD"
+    ]
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="raise")
+
+    # parse the UTC start date
+    df["StartUTC"] = pd.to_datetime(df["StartUTC"], utc=True)
+
+    # always sort by PointName for reproducibility
+    return df.sort_values("SQLSensorID").reset_index(drop=True)
