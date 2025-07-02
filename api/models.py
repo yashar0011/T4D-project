@@ -3,18 +3,28 @@ from typing    import Optional, Literal
 
 
 class SettingsRow(BaseModel):
-    id:                 int
-    Site:               str
-    PointName:          str
-    SensorID:           int
-    Type:               Literal["Reflective", "Reflectless"]
-    CSVImport:          bool
-    SQLImport:          bool | None = None
-    SQLSensorID:        int  | None = None
-    TimeStampOffset:    float | None = None
-    TerrestrialFileName:   str | None = None
-    TerrestrialPointName:  str | None = None
-    TerrestrialColumnName: str | None = None
+    id:                int
+    Site:              str
+    PointName:         str
+    Type:              Literal["Reflective", "Reflectless"]
+
+    # ingestion / export flags
+    CSVImport:         bool
+    SQLImport:         bool | None = None
+    SQLSensorID:       int  | None = None
+
+    # terrestrial links
+    TimeStampOffset:        float | None = None      # minutes  (+ east, – west)
+    TerrestrialFileName:    str   | None = None
+    TerrestrialPointName:   str   | None = None
+    TerrestrialColumnName:  str   | None = None
+
+    # instrument baselines
+    BaselineN:         float | None = None
+    BaselineE:         float | None = None
+    BaselineH:         float
+
+    StartUTC:          str = Field(..., description="ISO UTC as text")
 
 
 class SettingsUpdate(BaseModel):
@@ -23,7 +33,7 @@ class SettingsUpdate(BaseModel):
 
 
 class DeltaPoint(BaseModel):
-    TIMESTAMP: str      # ISO UTC
+    TIMESTAMP: str
     Delta_H_mm: float
     Delta_N_mm: Optional[float] = None
     Delta_E_mm: Optional[float] = None
