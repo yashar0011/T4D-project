@@ -1,38 +1,67 @@
 # amts_pipeline/settings.py
 from __future__ import annotations
+
+import logging
 from pathlib import Path
+from typing import Final
+
 import pandas as pd
 
-SETTINGS_XLSX = Path(__file__).resolve().parent.parent / "Settings.xlsx"
+ROOT: Final = Path(__file__).resolve().parent.parent
+SETTINGS_XLSX: Final = ROOT / "Settings.xlsx"
+_LOG = logging.getLogger(__name__)
 
-# ───────────────────────── helpers ──────────────────────────
-def _validate_row(r: pd.Series) -> None:
-    """Ensure CalculationType ↔︎ TerrestrialColumnName are compatible."""
-    cols = [c.strip().title() for c in str(r["TerrestrialColumnName"]).split("|")]
-    calc = str(r["CalculationType"]).strip().lower()
 
-    allowed = {
-        "reflective":  {"Elevation", "Northing", "Easting"},
-        "reflectless": {"Elevation"},
-    }
+# ───────────────────────── row-level sanity checks ──────────────────────────
+def _validate_row(row: pd.Series) -> None:
+    """
+    • Ensure **Type** is either Reflective or Reflectless  
+    • If Type == Reflective, BaselineN & BaselineE must be present
+    • OutlierMAD → positive float (defaults handled later)
+    """
+    pnt = row["PointName"]
 
-    if calc not in allowed:
-        raise ValueError(f"{r['PointName']}: unknown CalculationType {r['CalculationType']!r}")
+    # 1) Type
+    t = str(row["Type"]).strip().lower()
+    if t not in {"reflective", "reflectless"}:
+        raise ValueError(f"{pnt}: unknown Type {row['Type']!r}")
 
-    # Reflective must have at least Elevation; if vector cols present, require all 3
-    needed = allowed[calc]
-    if not set(cols).issubset(needed):
-        raise ValueError(
-            f"{r['PointName']}: columns {cols} incompatible with {r['CalculationType']}"
-        )
+    # 2) Baselines
+    if t == "reflective":
+        if pd.isna(row.get("BaselineN")) or pd.isna(row.get("BaselineE")):
+            raise ValueError(f"{pnt}: Reflective points need BaselineN & BaselineE")
+    if pd.isna(row.get("BaselineH")):
+        raise ValueError(f"{pnt}: BaselineH is required")
 
+    # 3) OutlierMAD
+    mad = row.get("OutlierMAD", 3.5)
+    if not (isinstance(mad, (int, float)) and mad > 0):
+        raise ValueError(f"{pnt}: OutlierMAD must be a positive number")
+
+
+# ───────────────────────── public helper ────────────────────────────────────
 def load_active_settings(path: Path = SETTINGS_XLSX) -> pd.DataFrame:
-    """Read sheet, run per-row validation, return ACTIVE rows only."""
-    df = pd.read_excel(path, sheet_name="Settings")
-    df = df.loc[df["CSVImport"].astype(bool)].copy()      # ← your new on/off flag
+    """
+    Read the **Settings** worksheet, keep rows where CSVImport == TRUE,
+    run per-row sanity checks, and return the cleaned DataFrame.
 
-    # validate up-front so bad rows never reach the pipeline
+    Any invalid row raises **ValueError** so problems are caught at start-up
+    instead of half-way through a job.
+    """
+    try:
+        df = pd.read_excel(path, sheet_name="Settings")
+    except Exception as exc:
+        raise RuntimeError(f"Cannot read {path} › Settings – {exc}") from exc
+
+    # robust boolean cast (TRUE/False/1/0/Yes/No…)
+    active_mask = df["CSVImport"].astype(str).str.lower().isin(
+        {"true", "1", "yes", "y"}
+    )
+    df = df.loc[active_mask].copy()
+
+    # validation
     for _, row in df.iterrows():
         _validate_row(row)
 
-    return df
+    _LOG.info("Loaded %d active Settings rows from %s", len(df), path.name)
+    return df.reset_index(drop=True)

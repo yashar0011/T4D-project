@@ -1,65 +1,100 @@
-"""Filesystem watcher that only re‑processes changed/added slices."""
+# amts_pipeline/watcher.py
 from __future__ import annotations
-import argparse, time
-from pathlib import Path
-from datetime import datetime, timezone
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-import pandas as pd
 
-from .settings import load_active_settings
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Tuple
+
+import pandas as pd
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 from .cache_utils import Cache
 from .cleaner import process_slice
 from .log_utils import get_logger
+from .settings import load_active_settings
 
-logger = get_logger()
+_LOG = get_logger(__name__)
 
+# ───────────────────────── helpers ─────────────────────────────────────────
+KEY_COLS: tuple[str, ...] = ("SliceID", )   # single, immutable column
+"""Stable, unique key for one slice (used in Cache)."""
+def _row_key(r: pd.Series) -> str:
+    return str(r["SliceID"])
+
+# ───────────────────────── handler class ───────────────────────────────────
 class SettingsHandler(FileSystemEventHandler):
     def __init__(self, settings_path: Path, force_full: bool = False):
         super().__init__()
-        self.settings_path = settings_path.resolve()
+        self.path = settings_path.resolve()
         self.force_full = force_full
-        self.cache = Cache(self.settings_path)
+        self.cache = Cache(self.path)
         self.run_pipeline(first_run=True)
 
+    # watchdog callback ------------
     def on_modified(self, event):
-        if Path(event.src_path).resolve() == self.settings_path: # type: ignore
+        if Path(event.src_path).resolve() == self.path:  # type: ignore[attr-defined]
             self.run_pipeline()
 
-    def run_pipeline(self, first_run=False):
-        df = load_active_settings(self.settings_path)
-        if self.force_full and not first_run:
-            changed = [(self.cache.row_key(r), r) for _, r in df.iterrows()]
-            self.cache.data = {}  # wipe cache to force rebuild
-        else:
-            changed = self.cache.diff(df)
-        if not changed:
-            logger.info("Settings saved – no relevant changes detected.")
+    # main driver ------------------
+    def run_pipeline(self, *, first_run: bool = False) -> None:
+        df = load_active_settings(self.path)
+
+        # EARLY-OUT: nothing active
+        if df.empty:
+            _LOG.warning("Settings.xlsx has no active (CSVImport=TRUE) rows.")
             return
-        logger.info(f"{len(changed)} slice(s) to process…")
-        for k, row in changed:
-            # determine slice window
-            t0 = pd.to_datetime(row["StartUTC"], utc=True)
-            later = df[(df["SensorID"] == row["SensorID"]) &
-                        (df["PointName"] == row["PointName"]) &
-                        (df["StartUTC"] > row["StartUTC"])]["StartUTC"].min()
-            t1 = pd.to_datetime(later, utc=True) if pd.notna(later) else None
-            latest_ts = pd.to_datetime(self.cache.data.get(k, {}).get("latest_ts")) if k in self.cache.data else None
-            new_latest = process_slice(row, latest_ts)
+
+        # compute slices needing work
+        if self.force_full and not first_run:
+            todo = [( _row_key(r), r ) for _, r in df.iterrows()]
+            self.cache.data.clear()
+        else:
+            todo = self.cache.diff(df, key_fn=_row_key)  # -> List[(key,row)]
+
+        if not todo:
+            _LOG.info("Settings saved – no relevant changes detected.")
+            return
+
+        _LOG.info("Processing %d slice(s)…", len(todo))
+
+        for k, row in todo:
+            # skip disabled rows (CSVImport == FALSE) even if cache said “changed”
+            if not bool(row["CSVImport"]):
+                _LOG.info("%s CSVImport=FALSE – skipped.", row["PointName"])
+                continue
+
+            # latest timestamp already processed
+            last_ts = self.cache.data.get(k, {}).get("latest_ts")
+            last_dt = pd.to_datetime(last_ts) if last_ts else None
+
+            new_latest = process_slice(row, latest_ts=last_dt)
+
             if new_latest is not None:
                 self.cache.update_latest(k, new_latest)
+
         self.cache.save()
 
 
-def start_watch(settings_path: Path, force_full: bool = False):
-    handler = SettingsHandler(settings_path, force_full)
+# ───────────────────────── public entry-point ──────────────────────────────
+def start_watch(settings_path: Path, *, force_full: bool = False) -> None:
+    """
+    Watch *Settings.xlsx* for edits.  
+    • Ctrl-C to stop.  
+    • `force_full=True` rebuilds **all** slices on the next change.
+    """
+    handler = SettingsHandler(settings_path, force_full=force_full)
     obs = Observer()
     obs.schedule(handler, settings_path.parent, recursive=False)
     obs.start()
-    logger.info(f"Watching {settings_path} for changes… (Ctrl‑C to quit)")
+
+    _LOG.info("Watching %s for changes… (Ctrl-C to quit)", settings_path)
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
+        _LOG.info("Watcher stopped by user.")
         obs.stop()
+
     obs.join()

@@ -33,7 +33,7 @@ def _to_utc(ts: pd.Series, tz_name: str | None) -> pd.Series:
 def process_slice(row: pd.Series, latest_ts):
     # ───────────────────────── meta ──────────────────────────
     point      = row["PointName"]
-    sensor     = row["SQLSensorID"]
+    sensor     = row.get("SQLSensorID") or f"SID{row['SliceID']}"
     site       = row["Site"]
     tz_name    = row.get("TimeZone")          # NEW column in Settings
     profile_name = row["FileProfile"]
@@ -85,7 +85,7 @@ def process_slice(row: pd.Series, latest_ts):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     slice_stamp = start_utc.strftime("%Y%m%dT%H%M%SZ")
-    csv_name    = f"{point}_{sensor}_{slice_stamp}.csv"
+    csv_name = f"{point}_{row['SliceID']}_{slice_stamp}.csv"
     clean.to_csv(
         out_dir / csv_name,
         mode="a",
