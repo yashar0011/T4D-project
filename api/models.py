@@ -1,30 +1,29 @@
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
-from typing    import Optional, Literal
 
 
 class SettingsRow(BaseModel):
-    id:                int
-    Site:              str
-    PointName:         str
-    Type:              Literal["Reflective", "Reflectless"]
+    # ── spreadsheet columns ───────────────────────────────
+    id:         int                       # injected by /routes.py
+    Site:       str
+    PointName:  str
+    Type:       Literal["Reflective", "Reflectless"]
 
-    # ingestion / export flags
-    CSVImport:         bool
-    SQLImport:         bool | None = None
-    SQLSensorID:       int  | None = None
+    CSVImport:  bool
+    SQLImport:  Optional[bool] = None
+    SQLSensorID: Optional[int] = None
 
-    # terrestrial links
-    TimeStampOffset:        float | None = None      # minutes  (+ east, – west)
-    TerrestrialFileName:    str   | None = None
-    TerrestrialPointName:   str   | None = None
-    TerrestrialColumnName:  str   | None = None
+    FileProfile: str                      # ← NEW (links to FileProfiles sheet)
+    TerrestrialPointName: Optional[str] = None
 
-    # instrument baselines
-    BaselineN:         float | None = None
-    BaselineE:         float | None = None
-    BaselineH:         float
+    BaselineN: Optional[float] = None
+    BaselineE: Optional[float] = None
+    BaselineH: float                     # mandatory for ΔH
 
-    StartUTC:          str = Field(..., description="ISO UTC as text")
+    StartUTC: str = Field(..., description="ISO 8601 UTC")
+
+    # pydantic config (optional strictness)
+    model_config = {"extra": "ignore"}    # ignore accidental extra cols
 
 
 class SettingsUpdate(BaseModel):
@@ -33,7 +32,7 @@ class SettingsUpdate(BaseModel):
 
 
 class DeltaPoint(BaseModel):
-    TIMESTAMP: str
+    TIMESTAMP: str            # ISO-8601 UTC
     Delta_H_mm: float
     Delta_N_mm: Optional[float] = None
     Delta_E_mm: Optional[float] = None
@@ -41,7 +40,7 @@ class DeltaPoint(BaseModel):
 
 class DeltasResponse(BaseModel):
     point: str
-    rows:  list[DeltaPoint]
+    rows: list[DeltaPoint]
 
 
 class CommandRequest(BaseModel):
