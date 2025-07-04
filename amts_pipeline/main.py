@@ -4,7 +4,7 @@ from pathlib import Path
 from .watcher import start_watch
 from .log_utils import get_logger
 
-logger = get_logger()
+logger = get_logger(__name__)
 
 def _default_settings():
     here = Path(__file__).resolve().parent

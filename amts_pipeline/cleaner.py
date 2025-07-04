@@ -16,7 +16,7 @@ from .mad_utils   import mad_filter
 from .plotting    import make_pdf
 from .log_utils   import get_logger
 
-logger = get_logger()
+logger = get_logger(__name__)
 
 
 def _to_utc(ts: pd.Series, tz_name: str | None) -> pd.Series:
