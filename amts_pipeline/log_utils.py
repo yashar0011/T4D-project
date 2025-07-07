@@ -1,58 +1,74 @@
-"""Daily rotating per‑site logger (console + file)."""
-import logging
-import sys
+"""Daily rotating per-site logger (console + file)."""
+from __future__ import annotations
+import logging, sys
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from datetime import datetime
+from typing import Dict
 
-# A dictionary to hold logger instances so we don't reconfigure them.
-_LOGGERS = {}
+_LOGGERS: Dict[str, logging.Logger] = {}
 
+def _coerce_level(level) -> int:
+    """Accept int or case-insensitive name like 'debug'."""
+    if isinstance(level, int):
+        return level
+    try:
+        return logging._nameToLevel[str(level).upper()]
+    except KeyError:
+        raise ValueError(f"Unknown log level {level!r}") from None
 
-def get_logger(name: str, level=logging.INFO, site_root: Path | None = None):
+def get_logger(name: str,
+               level: int | str = logging.INFO,
+               site_root: Path | None = None) -> logging.Logger:
     """
-    Gets a configured logger instance.
+    Return a singleton logger for *name*.
 
-    Args:
-        name (str): The name for the logger (e.g., __name__).
-        level (int or str): The logging level (e.g., logging.DEBUG or "DEBUG").
-        site_root (Path, optional): If provided, logs will also be written to a
-                                    file in <site_root>/logs/. Defaults to None.
+    Parameters
+    ----------
+    name       : usually `__name__`
+    level      : int or "DEBUG"/"INFO"/…
+    site_root  : when given, writes daily logs to <site_root>/logs/YYYYMMDD.log
     """
-    # Use the name as the key to allow for multiple distinct loggers
+    level_int = _coerce_level(level)
+
     if name in _LOGGERS:
-        return _LOGGERS[name]
+        log = _LOGGERS[name]
+        log.setLevel(level_int)          # allow raising/lowering level later
+        return log                       # handlers already attached
 
-    # Create and configure the logger
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    # Set propagate to False to prevent messages from being sent to the root logger,
-    # which avoids duplicate log output.
-    logger.propagate = False
+    # create fresh logger ----------------------------------------------------
+    log = logging.getLogger(name)
+    log.setLevel(level_int)
+    log.propagate = False   # don’t double-print through the root logger
 
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        "%Y-%m-%d %H:%M:%S"
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s – %(message)s",
+        "%Y-%m-%d %H:%M:%S",
     )
 
-    # --- Console Handler ---
-    # This handler prints logs to the console (standard output).
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    # console ---------------------------------------------------------------
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(fmt)
+    log.addHandler(sh)
 
-    # --- File Handler (optional) ---
-    # This handler writes logs to a file if a site_root is provided.
+    # daily rotating file ---------------------------------------------------
     if site_root:
         try:
-            log_dir = Path(site_root) / "logs"
+            log_dir = Path(site_root, "logs")
             log_dir.mkdir(parents=True, exist_ok=True)
-            log_file = log_dir / f"{datetime.utcnow().strftime('%Y%m%d')}.log"
-            fh = logging.FileHandler(log_file, encoding="utf-8")
-            fh.setFormatter(formatter)
-            logger.addHandler(fh)
-        except Exception as e:
-            logger.error(f"Failed to create file handler for logging: {e}")
+            fh = TimedRotatingFileHandler(
+                log_dir / "amts.log",
+                when="midnight",
+                utc=True,
+                backupCount=14,          # keep 2 weeks; tune as you like
+                encoding="utf-8",
+            )
+            fh.setFormatter(fmt)
+            log.addHandler(fh)
+        except Exception as exc:  # pragma: no cover
+            # fall back to console only – *don’t* crash the app for logging
+            sh.emit(logging.LogRecord(name, logging.WARNING, __file__, 0,
+                                      f"Cannot create file handler: {exc}",
+                                      None, None))
 
-
-    _LOGGERS[name] = logger
-    return logger
+    _LOGGERS[name] = log
+    return log
