@@ -1,177 +1,230 @@
-# T4D‑Project – **Full‑Stack Guide**
+T4D-Project – End-to-End Monitoring Pipeline
+This guide provides a zero-to-running walkthrough for the T4D project. By following the commands, you will have:
 
-*(FastAPI + amts\_pipeline + React/TypeScript UI)*
+The AMTS watcher generating Δ-files from your settings.
 
-> **Copy‑paste ready.** Follow the commands at the bottom and you’ll have the back‑end watcher running, the REST API online at `http://localhost:8000`, and the front‑end dev server hot‑reloading at `http://localhost:5173`.
+The REST API running on http://localhost:8000.
 
----
+The React UI hot-reloading on http://localhost:5173.
 
-\## Table of Contents
+Table of Contents
+Repository Layout
 
-1. [Repository layout](#repo)
-2. [Python back‑end](#backend)
-      2.1 [Requirements & setup](#req)
-      2.2 [FastAPI app](#app)
-      2.3 [Watcher thread](#watch)
-      2.4 [Routes & schemas](#routes)
-3. [React + Tailwind UI](#frontend)
-      3.1 [Vite config](#vite)
-      3.2 [TanStack Query pattern](#query)
-      3.3 [shadcn/ui components](#shadcn)
-4. [One‑line start/stop](#commands)
-5. [Troubleshooting FAQ](#faq)
+Python Back-end
 
----
+Setup & Requirements
 
-<a id="repo"></a>
-\## 1 Repository Layout
+The run.py Launcher
 
-```
-T4D‑project/
-├─ amts_pipeline/           ← existing robust data pipeline
-│   └─ …
-├─ api/                     ← FastAPI micro‑service
-│   ├─ __init__.py
-│   ├─ main.py             ← creates `app` + spawns watcher
-│   ├─ routes.py           ← all `/api/*` endpoints
-│   ├─ models.py           ← Pydantic DTOs
-│   ├─ deps.py             ← thin wrappers around amts_pipeline
-│   └─ watcher_runner.py   ← background file‑watcher thread
-├─ outputs/                 ← generated Δ‑CSV / plots / logs
-├─ Settings.xlsx            ← single source of truth for sensors
-├─ requirements.txt         ← pinned Python deps  (see below)
-└─ ui/                      ← React + Vite front‑end (TypeScript)
-    ├─ src/
-    │   ├─ components/…
-    │   ├─ pages/…
-    │   ├─ App.tsx
-    │   └─ api.ts          ← Axios wrapper → `/api`
-    ├─ tailwind.config.js
-    ├─ tsconfig.app.json
-    └─ vite.config.ts
-```
+CSV Splitter Details
 
----
+FastAPI Service
 
-<a id="backend"></a>
-\## 2 Python Back‑End <a id="req"></a>
-\### 2.1 Requirements & virtual‑env
+React Front-end
 
-```bash
-python -m venv venv
-source venv/bin/activate    # PowerShell: .\venv\Scripts\Activate
+Run / Stop Quick-start
+
+Troubleshooting FAQ
+
+1. Repository Layout
+The project is organized into distinct modules for data processing, API services, and the user interface.
+
+T4D-project/
+├─ amts_pipeline/       ← Core data-processing package
+│  ├─ cleaner.py
+│  ├─ splitter.py        ← Simple CSV splitter (CLI: -m amts_pipeline.splitter)
+│  ├─ watcher.py         ← File-watcher for Settings.xlsx
+│  ├─ settings.py        ← Loads the "Settings" sheet
+│  ├─ file_profiles.py   ← Loads the "FileProfiles" sheet
+│  └─ ...
+├─ api/                 ← FastAPI micro-service
+│  ├─ main.py            ← Creates `app` + spawns the watcher thread
+│  ├─ routes.py          ← All /api/* endpoints
+│  ├─ models.py          ← Pydantic data transfer objects (DTOs)
+│  └─ deps.py            ← Thin wrappers around amts_pipeline
+├─ ui/                  ← React + Vite front-end (TypeScript)
+│  ├─ src/...
+│  └─ tailwind.config.js
+├─ run.py               ← Interactive launcher (splitter / watcher / full-run)
+├─ Settings.xlsx        ← Workbook with two sheets:
+│  │ • Settings        (Point-level config, one row = one slice)
+│  │ • FileProfiles    (File-level config: Match, TimeZone, column names…)
+└─ requirements.txt     ← Pinned Python dependencies
+
+2. Python Back-end
+Setup & Requirements
+First, create and activate a Python virtual environment, then install the required packages.
+
+# Create the virtual environment
+python -m venv .venv
+
+# Activate it (command differs by shell)
+# Windows PowerShell:
+.\.venv\Scripts\Activate
+# macOS / Linux:
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
-```
 
-`requirements.txt` (pinned versions):
+The requirements.txt file contains all necessary packages, tested on Python 3.11+.
 
-```
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-pydantic==2.7.1
-pandas==2.2.2
-numpy==1.26.4
-openpyxl==3.1.2
-XlsxWriter==3.2.0
-matplotlib==3.9.0
-watchdog==4.0.1
-python-dateutil==2.9.0
-tzdata==2024.1
-python-dotenv==1.0.1  # optional
-ruff==0.4.8          # dev‑time linter
-```
+The run.py Launcher
+For ease of use, an interactive launcher is provided. Simply run the script and choose an option. It will prompt for any required paths and build the correct CLI command for you.
 
-<a id="app"></a>
-\### 2.2 `api/main.py`
-Creates a FastAPI application, mounts CORS, includes routes, then spawns the background watcher so the Δ‑CSV and plots are generated continuously.
+(.venv) PS> python run.py
 
-<a id="watch"></a>
-\### 2.3 Background watcher (`watcher_runner.py`)
-A daemon `threading.Thread` that forwards commands through a queue (`run_once`, `full_build`, `reload_settings`, `stop`). This isolates long‑running file IO from async request workers.
+=== AMTS launcher ===
+ 1) Run CSV splitter (live)
+ 2) Run Settings watcher (live Δ-generator)
+ 3) One-off full pipeline run
+ q) Quit
+Select option:
 
-<a id="routes"></a>
-\### 2.4 Key Endpoints
+CSV Splitter Details
+The splitter module (amts_pipeline.splitter) can be run standalone to watch a folder, split raw CSVs into per-point files, and archive the originals. The glob pattern, time zone, and column names are configured in the FileProfiles sheet of Settings.xlsx.
 
-|  Method  |  Path                        |  Response       | Purpose                                           |
-| -------- | ---------------------------- | --------------- | ------------------------------------------------- |
-| GET      |  `/api/settings`             | `SettingsRow[]` | Live view of `Settings.xlsx` (only *active* rows) |
-| PUT      |  `/api/settings/{row_id}`    | `{ok}`          | Update one row (immediately picked up by watcher) |
-| GET      |  `/api/deltas?point=&hours=` | `DeltaResponse` | Last *n* hours of Δ‑values for a point            |
-| GET      |  `/api/outputs/sites`        | `{sites:[…]}`   | List of output site folders (for tree)            |
-| GET      |  `/api/outputs/file?path=`   | *file*          | Direct download of any generated artifact         |
-| GET      |  `/api/logs?tail=`           | `LogTail`       | Tail of most recent site log                      |
-| POST     |  `/api/command`              | `{queued}`      | Push a command to watcher queue                   |
+python -m amts_pipeline.splitter \
+    --export-root    "C:/T4D_Export/PapeSOE_TTC" \
+    --separated-root "D:/Separated"
 
----
+3. FastAPI Service
+The API is the central hub, providing data to the front-end.
 
-<a id="frontend"></a>
-\## 3 React Front‑End (Vite + Tailwind)
+Creates a FastAPI() app with permissive CORS for local development.
 
-```bash
+Mounts all API routes from api/routes.py.
+
+Spawns the watcher.py script in a background thread so that Δ-files and plots update automatically as Settings.xlsx is changed.
+
+Runs under Uvicorn, which provides hot-reloading during development.
+
+Key Endpoints
+Method
+
+Path
+
+Response
+
+Purpose
+
+GET
+
+/api/settings
+
+SettingsRow[]
+
+Live view of all active rows.
+
+PUT
+
+/api/settings/{row_id}
+
+{ok}
+
+Patch a single cell in the settings.
+
+GET
+
+/api/deltas
+
+DeltaResponse
+
+Get deltas for a point over the last n hours.
+
+GET
+
+/api/outputs/sites
+
+list
+
+Get the root of the output directory tree.
+
+GET
+
+/api/logs
+
+log tail
+
+Live tail of logs on a per-site basis.
+
+POST
+
+/api/command
+
+{queued}
+
+Send commands like full_build or stop.
+
+4. React Front-end
+The UI is a modern React application built with Vite.
+
+Proxy: Vite is configured to rewrite all /api/* requests to the back-end at http://localhost:8000.
+
+Styling: Tailwind CSS v3 with tailwindcss-animate.
+
+Components: Uses shadcn/ui for pre-built, accessible components.
+
+State Management: TanStack Query (v5) for server-state management.
+
+Setup Commands
+# Navigate to the UI directory
 cd ui
-npm install                # installs deps in package.json
-npm run dev                # http://localhost:5173
-```
 
-<a id="vite"></a>
-\### 3.1 `vite.config.ts`
+# Install dependencies
+npm install
 
-* Tailwind plugin is injected: `plugins: [react(), tailwindcss()]`.
-* Dev‑server proxies every `/api/*` call to `localhost:8000` so the JS code never needs the full origin.
-* `@/` import alias → `src/` (configured both in Vite and `tsconfig.app.json`).
+# Start the development server
+npm run dev
 
-<a id="query"></a>
-\### 3.2 Data‑loading pattern
-All components use **TanStack Query v5** (formerly react‑query). **Only the object signature is allowed**:
+The UI will be available at http://localhost:5173.
 
-```ts
-const { data } = useQuery({
-  queryKey: ["deltas", point],
-  queryFn : () => api.get(`/deltas`, { params:{ point, hours:24 } })
-                     .then(r => r.data),
-  refetchInterval: 10000,
-});
-```
+5. Run / Stop Quick-start
+Follow these steps in separate terminals to get the full system running.
 
-<a id="shadcn"></a>
-\### 3.3 shadcn/ui
+Start the Back-end API This also starts the file watcher automatically.
 
-```bash
-cd ui
-npx shadcn@latest init              # once – scaffolds config files
-npx shadcn@latest add button input card
-```
+# Run with hot-reloading enabled
+uvicorn api.main:app --reload
 
-Components are now imported as `@/components/ui/button` etc.
+The API will be live at http://localhost:8000, with interactive docs at http://localhost:8000/docs.
 
----
+Start the Front-end
 
-<a id="commands"></a>
-\## 4 Run / Stop Commands
+# In a new terminal
+cd ui && npm run dev
 
-```bash
-# 1)  activate venv then …
-uvicorn api.main:app --reload     # localhost:8000
+The UI will be live at http://localhost:5173.
 
-# 2)  in another terminal
-cd ui && npm run dev             # localhost:5173
+(Optional) Run the CSV Splitter If you need to process raw CSVs, run the splitter in a third terminal.
 
-# optional: force rebuild all Δ files
-curl -X POST localhost:8000/api/command -d '{"action":"full_build"}'
-```
+python -m amts_pipeline.splitter \
+    --export-root    "C:/T4D_Export/PapeSOE_TTC" \
+    --separated-root "D:/Separated"
 
----
+6. Troubleshooting FAQ
+Issue / Error Message
 
-<a id="faq"></a>
-\## 5 Troubleshooting FAQ
+Fix
 
-|  Issue                                            |  Fix                                                                                        |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `ImportError: cannot import name get_settings_df` | You saved an old `deps.py`. Ensure only **one** helper set – copy the full file above.      |
-| `shadcn init: No Tailwind config`                 | Run `npm install tailwindcss postcss autoprefixer && npx tailwindcss init -p` inside *ui/*. |
-| Vite white page, console 404 `/api/deltas`        | FastAPI not running or proxy mis‑configured. Start back‑end then reload.                    |
-| TanStack Query “Bad argument type”                | Use the **object** form: `useQuery({ queryKey:[…], queryFn })`.                             |
+worksheet "FileProfiles" not found
 
----
+Your Settings.xlsx must contain two sheets named Settings and FileProfiles. Check spelling.
 
-**Happy monitoring!**  Adjust baselines in `Settings.xlsx`, commit everything to Git, and deploy with any process‑manager (e.g. `gunicorn -k uvicorn.workers.UvicornWorker api.main:app`).
+Splitter does nothing
+
+Confirm the Match glob pattern in FileProfiles actually matches your CSV filenames.
+
+Bad argument type – TanStack Query
+
+The query must be in object form: useQuery({ queryKey, queryFn }).
+
+FastAPI 500 error
+
+A NaN or Inf value may have been included in JSON. Ensure the UI calls /api/settings which sanitizes values.
+
+ImportError: get_logger
+
+You may have an old import. Ensure it is from amts_pipeline.log_utils import get_logger.
+
+That’s it! Adjust baselines in Settings.xlsx, and the entire pipeline will update automatically. Happy monitoring!

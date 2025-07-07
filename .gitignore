@@ -16,4 +16,4 @@ outputs/
 .DS_Store
 Thumbs.db
 
-settings
+./Settings.xlsx
