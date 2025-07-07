@@ -2,26 +2,40 @@
 """
 run.py – friendly launcher for the AMTS toolbox
 ==============================================
+
+Just run::
+
+    python run.py
 """
-
 from __future__ import annotations
-import subprocess, sys, textwrap
 from pathlib import Path
+import sys
+import textwrap
+import time
 
-# ────────────────────────── helpers ──────────────────────────
-def _ask_path(msg: str, default: str | None = None, *, must_exist=True) -> Path:
+# --- Direct Imports from the pipeline ---
+# This is the correct way to use functions from other modules in the same project.
+# It avoids creating subprocesses and prevents the RuntimeWarning.
+from amts_pipeline.watcher import start_watch
+from amts_pipeline.splitter import _cycle as splitter_cycle
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+def _ask_path(msg: str, default: str | None = None, must_exist=True) -> Path:
+    """Helper function to prompt the user for a valid path."""
     while True:
         raw = input(f"{msg}{' ['+default+']' if default else ''}: ").strip() or default
         if not raw:
             print("  ✖ please enter a path")
             continue
-        p = Path(raw).expanduser()
+        p = Path(raw).expanduser().resolve()
         if must_exist and not p.exists():
             print(f"  ✖ {p} does not exist")
         else:
             return p
 
 def _ask_int(msg: str, default: int) -> int:
+    """Helper function to prompt the user for an integer."""
     while True:
         raw = input(f"{msg} [{default}]: ").strip()
         if not raw:
@@ -30,36 +44,43 @@ def _ask_int(msg: str, default: int) -> int:
             return int(raw)
         print("  ✖ not a number")
 
-def _spawn(cmd: list[str]) -> None:
-    print("\n▶", " ".join(cmd), "\n")
-    subprocess.run(cmd, check=True)
-
-# ────────────────────────── tasks ────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 def split_loop(single_pass: bool) -> None:
+    """Gets parameters and runs the splitter cycle."""
     exp = _ask_path("Export folder with raw T4D CSVs")
     sep = _ask_path("Separated-CSV folder", "D:/Separated", must_exist=False)
-    sleep = 0 if single_pass else _ask_int("Seconds between passes", 60)
+    
+    if not sep.exists():
+        sep.mkdir(parents=True)
 
-    cmd = [
-        sys.executable, "-m", "amts_pipeline.splitter",
-        "--export-root", str(exp),
-        "--separated-root", str(sep),
-    ]
-    cmd += ["--once"] if single_pass else ["--sleep", str(sleep)]
-    _spawn(cmd)
+    if single_pass:
+        print("\n▶ Running splitter for a single pass...\n")
+        splitter_cycle(exp, sep)
+        print("\n✔︎ Single pass complete.")
+    else:
+        sleep = _ask_int("Seconds between passes", 60)
+        print(f"\n▶ Starting splitter, checking every {sleep} seconds (Ctrl-C to stop)...\n")
+        try:
+            while True:
+                splitter_cycle(exp, sep)
+                time.sleep(sleep)
+        except KeyboardInterrupt:
+            print("\nSplitter stopped by user.")
+
 
 def run_watcher(full: bool) -> None:
+    """
+    Gets parameters and runs the pipeline watcher.
+    THIS IS THE CORRECTED FUNCTION. It calls start_watch directly.
+    """
     settings = _ask_path("Path to Settings.xlsx", "Settings.xlsx")
-    cmd = [
-        sys.executable, "-m", "amts_pipeline.watcher",
-        "--settings", str(settings)            # ← FIX: pass with flag
-    ]
-    if full:
-        cmd.append("--full")
-    _spawn(cmd)
+    print(f"\n▶ Starting pipeline watcher (full_rebuild={full})...\n")
+    # Directly call the imported function instead of using subprocess
+    start_watch(settings, force_full=full)
 
-# ────────────────────────── menu ─────────────────────────────
+
 def main() -> None:
+    """Displays the main menu and executes the chosen task."""
     menu = textwrap.dedent("""
         Choose a task
         ─────────────
@@ -77,7 +98,7 @@ def main() -> None:
             case "2": split_loop(True)
             case "3": run_watcher(False)
             case "4": run_watcher(True)
-            case "5" | "": print("Bye!"); return
+            case "5" | "" | "q": print("Bye!"); return
             case _: print("✖ unknown choice")
 
 if __name__ == "__main__":
